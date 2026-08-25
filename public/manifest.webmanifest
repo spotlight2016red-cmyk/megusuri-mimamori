@@ -1,0 +1,20 @@
+{
+  "name": "目薬みまもり",
+  "short_name": "目薬みまもり",
+  "description": "家族で共有する点眼確認アプリ",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f4f6f3",
+  "theme_color": "#08795c",
+  "lang": "ja",
+  "icons": [
+    {
+      "src": "/app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
