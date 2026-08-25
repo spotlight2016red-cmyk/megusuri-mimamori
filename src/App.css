@@ -343,11 +343,10 @@ button {
 
 .dose-row {
   border-bottom: 1px solid #edf1ef;
-  grid-template-columns: 38px 85px 1fr auto;
+  grid-template-columns: 42px 90px 1fr;
   align-items: center;
-  gap: 10px;
-  min-height: 72px;
-  padding: 12px 0;
+  gap: 10px 12px;
+  padding: 16px 0;
   display: grid;
 }
 
@@ -385,23 +384,23 @@ button {
 
 .dose-label strong {
   color: var(--muted);
-  font-size: 13px;
+  font-size: 16px;
 }
 
 .dose-label span {
   font-variant-numeric: tabular-nums;
-  font-size: 20px;
+  font-size: 22px;
   font-weight: 900;
 }
 
 .dose-result strong {
-  font-size: 13px;
+  font-size: 16px;
 }
 
 .dose-result small {
   color: var(--muted);
   margin-top: 2px;
-  font-size: 11px;
+  font-size: 14px;
 }
 
 .dose-row.done .dose-result strong {
@@ -409,19 +408,23 @@ button {
 }
 
 .mini-action {
+  grid-column: 1 / -1;
   color: #5c6b67;
   background: #edf2ef;
   border: 0;
-  border-radius: 11px;
-  min-height: 38px;
-  padding: 0 13px;
-  font-size: 11px;
+  border-radius: 16px;
+  width: 100%;
+  min-height: 72px;
+  padding: 16px 22px;
+  font-size: 22px;
   font-weight: 800;
+  letter-spacing: 0.04em;
 }
 
 .mini-action.primary {
   background: var(--green);
   color: #fff;
+  box-shadow: 0 6px 14px #08795c2e;
 }
 
 .sensor-panel {
@@ -639,8 +642,9 @@ button {
 
 .large {
   width: 100%;
-  min-height: 58px;
+  min-height: 72px;
   margin-top: 20px;
+  font-size: 22px;
 }
 
 .primary-action,
@@ -879,7 +883,12 @@ button {
   }
 
   .dose-row {
-    grid-template-columns: 34px 72px 1fr;
+    grid-template-columns: 38px 80px 1fr;
+  }
+
+  .mini-action {
+    min-height: 80px;
+    font-size: 24px;
   }
 
   .dose-result {
