@@ -1,4 +1,4 @@
-const CACHE = "megusuri-mimamori-v3";
+const CACHE = "megusuri-mimamori-v4";
 const CORE = ["/", "/manifest.webmanifest", "/app-icon.svg"];
 
 self.addEventListener("install", (event) => {

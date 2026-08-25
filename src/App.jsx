@@ -17,6 +17,10 @@ import {
   voiceReminderService,
 } from "./voiceReminders.js";
 import {
+  loadUiSettings,
+  saveUiSettings,
+} from "./uiSettings.js";
+import {
   PRODUCTION_REMINDER_INTERVAL_MINUTES,
   TEST_REMINDER_INTERVAL_MINUTES,
   loadVoiceSettings,
@@ -33,6 +37,7 @@ export default function App() {
   const [tabletNotify, setTabletNotify] = useState(true);
   const [alexaNotify, setAlexaNotify] = useState(true);
   const [voiceSettings, setVoiceSettings] = useState(() => loadVoiceSettings());
+  const [uiSettings, setUiSettings] = useState(() => loadUiSettings());
   const wakeLockRef = useRef(null);
   const installPromptRef = useRef(null);
   const medicinesRef = useRef(medicines);
@@ -51,6 +56,10 @@ export default function App() {
     voiceSettingsRef.current = voiceSettings;
     saveVoiceSettings(voiceSettings);
   }, [voiceSettings]);
+
+  useEffect(() => {
+    saveUiSettings(uiSettings);
+  }, [uiSettings]);
 
   useEffect(() => {
     saveMedicines(medicines);
@@ -216,16 +225,31 @@ export default function App() {
         </div>
       </section>
 
-      <section className="android-banner">
-        <div className="android-icon">▣</div>
-        <div>
-          <strong>Androidタブレットに設置</strong>
-          <small>ホーム画面から全画面で起動できます</small>
-        </div>
-        <button type="button" onClick={handleInstall}>
-          アプリとして追加
-        </button>
-      </section>
+      {uiSettings.showInstallBanner && (
+        <section className="android-banner">
+          <div className="android-icon">▣</div>
+          <div>
+            <strong>Androidタブレットに設置</strong>
+            <small>ホーム画面から全画面で起動できます</small>
+          </div>
+          <button type="button" onClick={handleInstall}>
+            アプリとして追加
+          </button>
+          <button
+            type="button"
+            className="banner-dismiss"
+            aria-label="設置の案内を閉じる"
+            onClick={() =>
+              setUiSettings((current) => ({
+                ...current,
+                showInstallBanner: false,
+              }))
+            }
+          >
+            ×
+          </button>
+        </section>
+      )}
 
       <section className="cards" aria-label="今日の目薬一覧">
         {medicines.map((medicine) => {
@@ -507,6 +531,22 @@ export default function App() {
                 </button>
               </div>
             ))}
+            <label className="toggle-row">
+              <span>
+                <strong>設置の案内</strong>
+                <small>Androidタブレットに設置バナーを表示します。オフにすると画面が広がります</small>
+              </span>
+              <input
+                type="checkbox"
+                checked={uiSettings.showInstallBanner}
+                onChange={(event) =>
+                  setUiSettings((current) => ({
+                    ...current,
+                    showInstallBanner: event.target.checked,
+                  }))
+                }
+              />
+            </label>
             <label className="toggle-row">
               <span>
                 <strong>タブレット通知</strong>

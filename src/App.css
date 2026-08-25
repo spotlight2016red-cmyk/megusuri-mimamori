@@ -39,7 +39,7 @@ button {
   max-width: 1180px;
   min-height: 100vh;
   margin: 0 auto;
-  padding: 0 42px 112px;
+  padding: 0 28px 80px;
   position: relative;
 }
 
@@ -47,7 +47,7 @@ button {
   border-bottom: 1px solid var(--line);
   justify-content: space-between;
   align-items: center;
-  height: 88px;
+  height: 64px;
   display: flex;
 }
 
@@ -95,8 +95,8 @@ button {
 .hero {
   justify-content: space-between;
   align-items: end;
-  gap: 32px;
-  padding: 42px 4px 32px;
+  gap: 20px;
+  padding: 16px 4px 12px;
   display: flex;
 }
 
@@ -111,7 +111,7 @@ button {
 .hero h1 {
   letter-spacing: 0.02em;
   margin: 0;
-  font-size: 34px;
+  font-size: 28px;
 }
 
 .clock {
@@ -124,11 +124,11 @@ button {
 .summary {
   background: #fff7df;
   border: 1px solid #f1dfaa;
-  border-radius: 22px;
+  border-radius: 18px;
   align-items: center;
-  gap: 16px;
-  min-width: 370px;
-  padding: 19px 22px;
+  gap: 12px;
+  min-width: 300px;
+  padding: 12px 16px;
   display: flex;
 }
 
@@ -172,11 +172,11 @@ button {
 .android-banner {
   background: #eaf7f2;
   border: 1px solid #c4e5d9;
-  border-radius: 18px;
+  border-radius: 16px;
   align-items: center;
-  gap: 14px;
-  margin: -8px 0 24px;
-  padding: 15px 18px;
+  gap: 12px;
+  margin: 0 0 12px;
+  padding: 10px 12px 10px 14px;
   display: flex;
 }
 
@@ -210,26 +210,45 @@ button {
   border-radius: 12px;
   min-height: 42px;
   margin-left: auto;
-  padding: 0 18px;
+  padding: 0 16px;
   font-size: 13px;
   font-weight: 800;
 }
 
+.banner-dismiss {
+  background: transparent !important;
+  color: #5c6b67 !important;
+  box-shadow: none !important;
+  min-width: 44px;
+  min-height: 44px !important;
+  margin-left: 0 !important;
+  padding: 0 !important;
+  font-size: 28px !important;
+  font-weight: 400 !important;
+  line-height: 1;
+}
+
 .cards {
-  grid-template-columns: 1fr 1fr;
-  gap: 22px;
+  grid-template-columns: 1fr;
+  gap: 16px;
   display: grid;
+}
+
+@media (width >= 1100px) {
+  .cards {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 .drop-card {
   background: #fff;
   border: 2px solid #0000;
-  border-radius: 28px;
-  grid-template-rows: 1fr auto;
-  grid-template-columns: 110px 1fr;
-  gap: 0 22px;
-  min-height: 316px;
-  padding: 28px;
+  border-radius: 22px;
+  grid-template-rows: auto auto;
+  grid-template-columns: 88px 1fr;
+  gap: 0 16px;
+  min-height: 0;
+  padding: 16px 18px 12px;
   position: relative;
   overflow: hidden;
   box-shadow: 0 12px 32px #2e483f12;
@@ -250,9 +269,11 @@ button {
   justify-content: center;
   place-self: center;
   align-items: center;
-  width: 90px;
-  height: 150px;
+  width: 72px;
+  height: 120px;
   display: flex;
+  transform: scale(0.88);
+  transform-origin: center;
 }
 
 .bottle-cap {
@@ -319,13 +340,13 @@ button {
 }
 
 .drop-info h2 {
-  margin: 14px 0 9px;
-  font-size: 24px;
+  margin: 4px 0 4px;
+  font-size: 22px;
 }
 
 .medicine-card {
   grid-template-rows: auto auto;
-  min-height: 360px;
+  min-height: 0;
 }
 
 .medicine-times {
@@ -338,15 +359,15 @@ button {
 .dose-list {
   border-top: 1px solid var(--line);
   grid-column: 1 / -1;
-  margin-top: 20px;
+  margin-top: 10px;
 }
 
 .dose-row {
   border-bottom: 1px solid #edf1ef;
-  grid-template-columns: 42px 90px 1fr;
+  grid-template-columns: 36px 72px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px 12px;
-  padding: 16px 0;
+  gap: 8px 10px;
+  padding: 8px 0;
   display: grid;
 }
 
@@ -389,7 +410,7 @@ button {
 
 .dose-label span {
   font-variant-numeric: tabular-nums;
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 900;
 }
 
@@ -408,17 +429,19 @@ button {
 }
 
 .mini-action {
-  grid-column: 1 / -1;
+  grid-column: auto;
+  justify-self: end;
   color: #5c6b67;
   background: #edf2ef;
   border: 0;
-  border-radius: 16px;
-  width: 100%;
-  min-height: 72px;
-  padding: 16px 22px;
-  font-size: 22px;
+  border-radius: 14px;
+  width: auto;
+  min-width: 168px;
+  min-height: 56px;
+  padding: 0 16px;
+  font-size: 18px;
   font-weight: 800;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.03em;
 }
 
 .mini-action.primary {
@@ -429,11 +452,11 @@ button {
 
 .sensor-panel {
   background: #e9edeb;
-  border-radius: 20px;
+  border-radius: 16px;
   align-items: center;
-  gap: 15px;
-  margin-top: 22px;
-  padding: 18px 22px;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 12px 16px;
   display: flex;
 }
 
@@ -490,12 +513,12 @@ button {
 .tablet-panel {
   border: 1px solid var(--line);
   background: #fff;
-  border-radius: 18px;
+  border-radius: 16px;
   justify-content: space-between;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   margin-top: 12px;
-  padding: 17px 22px;
+  padding: 12px 16px;
   display: flex;
 }
 
@@ -529,8 +552,8 @@ button {
 .bottom-nav {
   z-index: 20;
   width: min(1180px, 100%);
-  height: 84px;
-  padding: 10px 30px calc(10px + env(safe-area-inset-bottom));
+  height: 64px;
+  padding: 6px 24px calc(6px + env(safe-area-inset-bottom));
   border-top: 1px solid var(--line);
   -webkit-backdrop-filter: blur(16px);
   backdrop-filter: blur(16px);
@@ -842,12 +865,12 @@ button {
   .hero {
     flex-direction: column;
     align-items: stretch;
-    gap: 20px;
-    padding: 28px 2px 22px;
+    gap: 12px;
+    padding: 12px 2px 10px;
   }
 
   .hero h1 {
-    font-size: 28px;
+    font-size: 26px;
   }
 
   .summary {
@@ -855,7 +878,8 @@ button {
   }
 
   .android-banner {
-    align-items: flex-start;
+    align-items: center;
+    flex-wrap: wrap;
   }
 
   .android-banner button {
@@ -868,14 +892,14 @@ button {
   }
 
   .drop-card {
-    grid-template-columns: 82px 1fr;
-    gap: 0 14px;
-    padding: 22px;
+    grid-template-columns: 72px 1fr;
+    gap: 0 12px;
+    padding: 14px;
   }
 
   .medicine-visual {
-    margin: -12px;
-    transform: scale(0.78);
+    margin: -8px;
+    transform: scale(0.72);
   }
 
   .drop-info h2 {
@@ -883,12 +907,14 @@ button {
   }
 
   .dose-row {
-    grid-template-columns: 38px 80px 1fr;
+    grid-template-columns: 36px minmax(0, 1fr) auto;
   }
 
   .mini-action {
-    min-height: 80px;
-    font-size: 24px;
+    min-width: 148px;
+    min-height: 56px;
+    font-size: 17px;
+    padding: 0 12px;
   }
 
   .dose-result {
