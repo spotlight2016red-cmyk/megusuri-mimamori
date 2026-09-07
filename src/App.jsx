@@ -43,15 +43,28 @@ import {
 import { loadAutoUpdateSettings } from "./autoUpdateSettings.js";
 import { canSafelyAutoUpdate } from "./safeAutoUpdate.js";
 import { startServiceWorkerUpdates } from "./swUpdate.js";
+import {
+  clearTestDateSettings,
+  formatTestDateLabel,
+  getCurrentDate,
+  getCurrentDateKey,
+  getDeviceDate,
+  loadTestDateSettings,
+  nextTestDateSettings,
+  saveTestDateSettings,
+} from "./testDate.js";
 
 function bootMedicines() {
-  return applyAndPersistDayRollover(loadMedicines(cloneSeed())).medicines;
+  return applyAndPersistDayRollover(
+    loadMedicines(cloneSeed()),
+    getCurrentDate(),
+  ).medicines;
 }
 
 export default function App() {
   const [medicines, setMedicines] = useState(() => bootMedicines());
   const [history, setHistory] = useState(() => loadHistory());
-  const [now, setNow] = useState(() => new Date());
+  const [now, setNow] = useState(() => getCurrentDate());
   const [sheet, setSheet] = useState(null);
   const [pending, setPending] = useState(null);
   const [toast, setToast] = useState("");
@@ -60,6 +73,9 @@ export default function App() {
   const [alexaNotify, setAlexaNotify] = useState(true);
   const [voiceSettings, setVoiceSettings] = useState(() => loadVoiceSettings());
   const [uiSettings, setUiSettings] = useState(() => loadUiSettings());
+  const [testDateSettings, setTestDateSettings] = useState(() =>
+    loadTestDateSettings(),
+  );
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const wakeLockRef = useRef(null);
   const installPromptRef = useRef(null);
@@ -72,19 +88,19 @@ export default function App() {
   const syncDayBoundary = () => {
     const result = applyAndPersistDayRollover(
       medicinesRef.current,
-      new Date(),
+      getCurrentDate(),
     );
     if (!result.didRollover && !result.didMigrate) return false;
     voiceReminderService.resetAll();
     medicinesRef.current = result.medicines;
     setMedicines(result.medicines);
     setHistory(result.history);
-    setNow(new Date());
+    setNow(getCurrentDate());
     return true;
   };
 
   useEffect(() => {
-    const clockTimer = window.setInterval(() => setNow(new Date()), 1000);
+    const clockTimer = window.setInterval(() => setNow(getCurrentDate()), 1000);
     const dayTimer = window.setInterval(() => syncDayBoundary(), 60_000);
     return () => {
       window.clearInterval(clockTimer);
@@ -133,7 +149,7 @@ export default function App() {
           // 日付またぎ処理を先に済ませ、競合を避ける
           syncDayBoundary();
           return canSafelyAutoUpdate({
-            now: new Date(),
+            now: getDeviceDate(),
             settings: autoUpdateSettingsRef.current,
             medicines: medicinesRef.current,
             pendingConfirmOpen: pendingRef.current != null,
@@ -192,6 +208,7 @@ export default function App() {
   }, [wakeLockOn]);
 
   const todayKey = toDateKey(now);
+  const deviceNow = getDeviceDate();
   const entries = useMemo(
     () => sortDoseEntries(listDoseEntries(medicines)),
     [medicines],
@@ -209,6 +226,62 @@ export default function App() {
   const allDone = entries.length > 0 && doneCount === entries.length;
 
   const showToast = (message) => setToast(message);
+
+  const applyTestDateAndSync = (nextSettings) => {
+    const saved = saveTestDateSettings(nextSettings);
+    setTestDateSettings(saved);
+    const result = applyAndPersistDayRollover(
+      medicinesRef.current,
+      getCurrentDate(),
+    );
+    medicinesRef.current = result.medicines;
+    setMedicines(result.medicines);
+    setHistory(result.history);
+    setNow(getCurrentDate());
+    if (result.didRollover || result.didMigrate) {
+      voiceReminderService.resetAll();
+    }
+    return result;
+  };
+
+  const handleToggleTestDate = (enabled) => {
+    if (!enabled) {
+      clearTestDateSettings();
+      setTestDateSettings(loadTestDateSettings());
+      const result = applyAndPersistDayRollover(
+        medicinesRef.current,
+        getCurrentDate(),
+      );
+      medicinesRef.current = result.medicines;
+      setMedicines(result.medicines);
+      setHistory(result.history);
+      setNow(getCurrentDate());
+      if (result.didRollover || result.didMigrate) {
+        voiceReminderService.resetAll();
+      }
+      showToast("端末の日付に戻しました");
+      return;
+    }
+    const dateKey =
+      testDateSettings.dateKey || getCurrentDateKey(getDeviceDate());
+    applyTestDateAndSync({ enabled: true, dateKey });
+  };
+
+  const handleTestDatePick = (dateKey) => {
+    if (!dateKey) return;
+    applyTestDateAndSync({ enabled: true, dateKey });
+  };
+
+  const handleAdvanceTestDate = () => {
+    const result = applyTestDateAndSync(
+      nextTestDateSettings(testDateSettings, getDeviceDate()),
+    );
+    if (result.didRollover) {
+      showToast("1日進め、履歴を保存してリセットしました");
+    } else {
+      showToast(`テスト日付：${formatTestDateLabel(getCurrentDateKey())}`);
+    }
+  };
 
   const requestComplete = (medicine, dose) => {
     setPending({ medicine, dose });
@@ -311,7 +384,7 @@ export default function App() {
         <div>
           <p className="eyebrow">今日の点眼</p>
           <h1>{formatDateHeading(now)}</h1>
-          <p className="clock">{formatClock(now)}</p>
+          <p className="clock">{formatClock(deviceNow)}</p>
         </div>
         <div className={`summary ${allDone ? "complete" : ""}`}>
           <span className="summary-icon">{allDone ? "✓" : "◷"}</span>
@@ -780,6 +853,61 @@ export default function App() {
             >
               試作データを初期状態に戻す
             </button>
+
+            <section className="dev-test-section">
+              <p className="eyebrow">開発・テスト</p>
+              <h3>テスト日付</h3>
+              <p className="settings-help">
+                通常運用では端末の実日時を使います。日次リセットと履歴の確認専用です。音声・自動更新の時刻は端末時計のままです。
+              </p>
+              {testDateSettings.enabled && testDateSettings.dateKey && (
+                <p className="test-date-banner" role="status">
+                  テスト日付使用中：
+                  {formatTestDateLabel(testDateSettings.dateKey)}
+                </p>
+              )}
+              <label className="toggle-row">
+                <span>
+                  <strong>テスト日付を使用</strong>
+                  <small>ONにすると日付判定だけ差し替えます</small>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={testDateSettings.enabled}
+                  onChange={(event) =>
+                    handleToggleTestDate(event.target.checked)
+                  }
+                />
+              </label>
+              <label className="test-date-picker">
+                <span>日付選択</span>
+                <input
+                  type="date"
+                  aria-label="テスト日付"
+                  value={
+                    testDateSettings.dateKey ||
+                    getCurrentDateKey(getDeviceDate())
+                  }
+                  onChange={(event) => handleTestDatePick(event.target.value)}
+                />
+              </label>
+              <div className="dev-test-actions">
+                <button
+                  type="button"
+                  className="secondary-action"
+                  onClick={handleAdvanceTestDate}
+                >
+                  ＋1日進める
+                </button>
+                <button
+                  type="button"
+                  className="secondary-action"
+                  onClick={() => handleToggleTestDate(false)}
+                >
+                  端末の日付に戻す
+                </button>
+              </div>
+            </section>
           </div>
         </div>
       )}

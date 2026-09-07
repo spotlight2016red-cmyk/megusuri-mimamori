@@ -923,6 +923,51 @@ button {
   display: block;
 }
 
+.dev-test-section {
+  border-top: 1px dashed var(--line);
+  margin-top: 28px;
+  padding-top: 18px;
+}
+
+.dev-test-section h3 {
+  margin: 4px 0 8px;
+  font-size: 18px;
+}
+
+.test-date-banner {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #fff6d8;
+  color: #6b5a12;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.test-date-picker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+  font-weight: 700;
+}
+
+.test-date-picker input[type="date"] {
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  padding: 8px 10px;
+  background: #fff;
+  font: inherit;
+}
+
+.dev-test-actions {
+  display: grid;
+  gap: 10px;
+  margin-top: 8px;
+}
+
 @media (width <= 760px) {
   .app-shell {
     padding: 0 18px 105px;

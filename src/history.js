@@ -1,5 +1,6 @@
 import { listDoseEntries, sortDoseEntries } from "./medicines.js";
 import { saveMedicines } from "./storage.js";
+import { getCurrentDate } from "./testDate.js";
 import { toDateKey } from "./time.js";
 
 export const HISTORY_KEY = "megusuri-history-v1";
@@ -147,7 +148,7 @@ export function applyLegacyDailyResetMigration(medicines, todayKey) {
  * 日付変更チェックの共通入口。
  * 起動時 / pageshow / visibilitychange / 定期チェックから呼ぶ。
  */
-export function applyAndPersistDayRollover(medicines, now = new Date()) {
+export function applyAndPersistDayRollover(medicines, now = getCurrentDate()) {
   const todayKey = toDateKey(now);
   const previousLastActive = loadLastActiveDate();
   const alreadyMigrated = loadDailyResetMigrated();

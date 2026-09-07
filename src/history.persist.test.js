@@ -10,6 +10,7 @@ import {
   loadLastActiveDate,
 } from "./history.js";
 import { STORAGE_KEY, loadMedicines, saveMedicines } from "./storage.js";
+import { resetTestDateCacheForTests } from "./testDate.js";
 
 function createMemoryStorage() {
   const store = new Map();
@@ -71,6 +72,7 @@ const medicinesWithDone = [
 describe("applyAndPersistDayRollover（疑似日付変更）", () => {
   beforeEach(() => {
     globalThis.window = { localStorage: createMemoryStorage() };
+    resetTestDateCacheForTests();
   });
 
   it("昨日の last-active-date なら履歴保存→リセット→今日へ更新し、同じ日の再実行では二重リセットしない", () => {
