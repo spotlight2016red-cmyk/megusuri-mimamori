@@ -10,8 +10,21 @@ import {
   updateDose,
   updateMedicine,
 } from "./medicines.js";
+import {
+  applyAndPersistDayRollover,
+  formatHistoryStatus,
+  historyEntriesFromMedicines,
+  listPastHistoryKeys,
+  loadHistory,
+} from "./history.js";
 import { loadMedicines, saveMedicines } from "./storage.js";
-import { displayStatus, formatClock, formatDateHeading } from "./time.js";
+import {
+  displayStatus,
+  formatClock,
+  formatDateHeading,
+  parseDateKey,
+  toDateKey,
+} from "./time.js";
 import {
   unlockSpeech,
   voiceReminderService,
@@ -27,8 +40,13 @@ import {
   saveVoiceSettings,
 } from "./voiceSettings.js";
 
+function bootMedicines() {
+  return applyAndPersistDayRollover(loadMedicines(cloneSeed())).medicines;
+}
+
 export default function App() {
-  const [medicines, setMedicines] = useState(() => loadMedicines(cloneSeed()));
+  const [medicines, setMedicines] = useState(() => bootMedicines());
+  const [history, setHistory] = useState(() => loadHistory());
   const [now, setNow] = useState(() => new Date());
   const [sheet, setSheet] = useState(null);
   const [pending, setPending] = useState(null);
@@ -43,9 +61,27 @@ export default function App() {
   const medicinesRef = useRef(medicines);
   const voiceSettingsRef = useRef(voiceSettings);
 
+  const syncDayBoundary = () => {
+    const result = applyAndPersistDayRollover(
+      medicinesRef.current,
+      new Date(),
+    );
+    if (!result.didRollover) return false;
+    voiceReminderService.resetAll();
+    medicinesRef.current = result.medicines;
+    setMedicines(result.medicines);
+    setHistory(result.history);
+    setNow(new Date());
+    return true;
+  };
+
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(new Date()), 1000);
-    return () => window.clearInterval(timer);
+    const clockTimer = window.setInterval(() => setNow(new Date()), 1000);
+    const dayTimer = window.setInterval(() => syncDayBoundary(), 60_000);
+    return () => {
+      window.clearInterval(clockTimer);
+      window.clearInterval(dayTimer);
+    };
   }, []);
 
   useEffect(() => {
@@ -90,7 +126,13 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const onPageshow = () => {
+      syncDayBoundary();
+    };
     const onVisibility = async () => {
+      if (document.visibilityState === "visible") {
+        syncDayBoundary();
+      }
       if (document.visibilityState !== "visible" || !wakeLockOn) return;
       if (!("wakeLock" in navigator)) return;
       try {
@@ -99,13 +141,26 @@ export default function App() {
         setWakeLockOn(false);
       }
     };
+    window.addEventListener("pageshow", onPageshow);
     document.addEventListener("visibilitychange", onVisibility);
-    return () => document.removeEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("pageshow", onPageshow);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [wakeLockOn]);
 
+  const todayKey = toDateKey(now);
   const entries = useMemo(
     () => sortDoseEntries(listDoseEntries(medicines)),
     [medicines],
+  );
+  const todayHistoryEntries = useMemo(
+    () => historyEntriesFromMedicines(medicines),
+    [medicines],
+  );
+  const pastHistoryKeys = useMemo(
+    () => listPastHistoryKeys(history, todayKey),
+    [history, todayKey],
   );
   const doneCount = entries.filter(({ dose }) => dose.status === "done").length;
   const nextOpen = getNextOpenDose(medicines);
@@ -179,6 +234,7 @@ export default function App() {
   const resetPrototype = () => {
     voiceReminderService.resetAll();
     setMedicines(cloneSeed());
+    setHistory(loadHistory());
     showToast("試作データを初期状態に戻しました");
     setSheet(null);
   };
@@ -418,19 +474,49 @@ export default function App() {
               ×
             </button>
             <p className="eyebrow">使用履歴</p>
-            <h2>今日の記録</h2>
+            <h2>日付別の記録</h2>
             <div className="history-list">
-              {entries.map(({ medicine, dose }) => (
-                <div key={dose.id} className="history-day compact">
-                  <strong>
-                    {medicine.name}・{dose.label}
-                  </strong>
-                  {dose.status === "done" ? (
-                    <span className="all-done">✓ {dose.completedAt}</span>
-                  ) : (
-                    <span className="pending-label">予定 {dose.time}</span>
-                  )}
-                </div>
+              <section className="history-day-block">
+                <h3>{formatDateHeading(now)}</h3>
+                {todayHistoryEntries.map((entry) => (
+                  <div
+                    key={`today-${entry.medicineId}-${entry.doseId}`}
+                    className="history-entry"
+                  >
+                    <strong>
+                      {entry.medicineName} {entry.label}
+                    </strong>
+                    <span
+                      className={
+                        entry.status === "done" ? "all-done" : "pending-label"
+                      }
+                    >
+                      {formatHistoryStatus(entry, { isToday: true })}
+                    </span>
+                  </div>
+                ))}
+              </section>
+              {pastHistoryKeys.map((dateKey) => (
+                <section key={dateKey} className="history-day-block">
+                  <h3>{formatDateHeading(parseDateKey(dateKey))}</h3>
+                  {(history[dateKey] ?? []).map((entry) => (
+                    <div
+                      key={`${dateKey}-${entry.medicineId}-${entry.doseId}`}
+                      className="history-entry"
+                    >
+                      <strong>
+                        {entry.medicineName} {entry.label}
+                      </strong>
+                      <span
+                        className={
+                          entry.status === "done" ? "all-done" : "unused-label"
+                        }
+                      >
+                        {formatHistoryStatus(entry, { isToday: false })}
+                      </span>
+                    </div>
+                  ))}
+                </section>
               ))}
             </div>
           </div>

@@ -711,6 +711,34 @@ button {
   margin-top: 24px;
 }
 
+.history-day-block {
+  border-top: 1px solid var(--line);
+  padding: 18px 0 8px;
+}
+
+.history-day-block:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.history-day-block h3 {
+  margin: 0 0 10px;
+  font-size: 17px;
+}
+
+.history-entry {
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  min-height: 42px;
+  display: flex;
+}
+
+.history-entry strong {
+  font-size: 15px;
+  font-weight: 700;
+}
+
 .history-day {
   border-top: 1px solid var(--line);
   padding: 18px 0;
@@ -721,17 +749,24 @@ button {
 }
 
 .all-done {
-  float: right;
   color: var(--green);
   font-size: 13px;
   font-weight: 800;
+  white-space: nowrap;
 }
 
 .pending-label {
-  float: right;
   color: #786bd8;
   font-size: 13px;
   font-weight: 800;
+  white-space: nowrap;
+}
+
+.unused-label {
+  color: #8a9591;
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
 .history-day.compact {

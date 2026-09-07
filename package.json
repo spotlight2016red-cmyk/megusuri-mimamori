@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite --host --port 5173",
     "build": "vite build",
-    "preview": "vite preview --host --port 4173"
+    "preview": "vite preview --host --port 4173",
+    "test": "node --test src/history.test.js src/history.persist.test.js"
   },
   "dependencies": {
     "react": "^19.1.1",

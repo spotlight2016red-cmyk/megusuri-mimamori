@@ -42,6 +42,13 @@ export function toDateKey(date = new Date()) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+export function parseDateKey(dateKey) {
+  const [year, month, day] = String(dateKey)
+    .split("-")
+    .map((part) => Number(part));
+  return new Date(year, month - 1, day);
+}
+
 export function displayStatus(dose, now = new Date()) {
   if (dose.status === "done") return "done";
   if (dose.status === "skipped") return "skipped";

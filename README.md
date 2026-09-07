@@ -29,6 +29,8 @@ npm run preview
 
 点眼データは `localStorage['megusuri-medicines-v2']` に保存します。公開版と同じ配列形式を維持しており、未知フィールドは削除しません。
 
+日付またぎ時は前日スナップショットを `localStorage['megusuri-history-v1']` に保存し、全 dose を `upcoming` に戻します。最終稼働日は `localStorage['megusuri-last-active-date']` です。
+
 音声通知の設定だけ、別キー `localStorage['megusuri-voice-settings-v1']` に保存します。
 
 ## PWA / 音声通知
