@@ -36,6 +36,7 @@ npm run preview
 ## PWA / 音声通知
 
 - HTTPS 環境で Android Chrome の「ホーム画面に追加」に対応
+- 新バージョン検知時は「更新する」バナーを表示（自動では強制リロードしない）
 - 画面常時表示（Wake Lock）に対応
 - 未点眼時はタブレット自身が Web Speech API（`speechSynthesis` / `ja-JP`）で読み上げ
 - 音声は画面表示中のみ動作します（バックグラウンドでは制約あり）

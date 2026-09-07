@@ -39,6 +39,7 @@ import {
   loadVoiceSettings,
   saveVoiceSettings,
 } from "./voiceSettings.js";
+import { startServiceWorkerUpdates } from "./swUpdate.js";
 
 function bootMedicines() {
   return applyAndPersistDayRollover(loadMedicines(cloneSeed())).medicines;
@@ -56,10 +57,12 @@ export default function App() {
   const [alexaNotify, setAlexaNotify] = useState(true);
   const [voiceSettings, setVoiceSettings] = useState(() => loadVoiceSettings());
   const [uiSettings, setUiSettings] = useState(() => loadUiSettings());
+  const [updateAvailable, setUpdateAvailable] = useState(false);
   const wakeLockRef = useRef(null);
   const installPromptRef = useRef(null);
   const medicinesRef = useRef(medicines);
   const voiceSettingsRef = useRef(voiceSettings);
+  const swUpdateRef = useRef(null);
 
   const syncDayBoundary = () => {
     const result = applyAndPersistDayRollover(
@@ -108,6 +111,20 @@ export default function App() {
     });
     voiceReminderService.start();
     return () => voiceReminderService.stop();
+  }, []);
+
+  useEffect(() => {
+    if (!import.meta.env.PROD || !("serviceWorker" in navigator)) {
+      return undefined;
+    }
+    const controller = startServiceWorkerUpdates({
+      onUpdateAvailable: () => setUpdateAvailable(true),
+    });
+    swUpdateRef.current = controller;
+    return () => {
+      controller.stop();
+      swUpdateRef.current = null;
+    };
   }, []);
 
   useEffect(() => {
@@ -207,6 +224,13 @@ export default function App() {
     showToast("ブラウザメニューから「ホーム画面に追加」を選んでください");
   };
 
+  const handleApplyUpdate = async () => {
+    const applied = await swUpdateRef.current?.applyUpdate?.();
+    if (!applied) {
+      showToast("更新の準備がまだ完了していません。少し待って再度お試しください");
+    }
+  };
+
   const toggleWakeLock = async () => {
     if (wakeLockOn) {
       await wakeLockRef.current?.release?.();
@@ -280,6 +304,18 @@ export default function App() {
           </div>
         </div>
       </section>
+
+      {updateAvailable && (
+        <section className="update-banner" role="status">
+          <div>
+            <strong>新しいバージョンがあります</strong>
+            <small>最新版に更新できます。点眼データはそのまま残ります</small>
+          </div>
+          <button type="button" onClick={handleApplyUpdate}>
+            更新する
+          </button>
+        </section>
+      )}
 
       {uiSettings.showInstallBanner && (
         <section className="android-banner">
