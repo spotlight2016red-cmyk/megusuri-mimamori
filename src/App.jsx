@@ -23,6 +23,7 @@ import {
   displayStatus,
   formatClock,
   formatDateHeading,
+  getScheduledAt,
   parseDateKey,
   toDateKey,
 } from "./time.js";
@@ -36,10 +37,16 @@ import {
 } from "./uiSettings.js";
 import {
   PRODUCTION_REMINDER_INTERVAL_MINUTES,
+  PRODUCTION_REMINDER_WINDOW_MINUTES,
   TEST_REMINDER_INTERVAL_MINUTES,
+  TEST_REMINDER_WINDOW_MINUTES,
+  isTestReminderPreset,
   loadVoiceSettings,
+  productionReminderPreset,
   saveVoiceSettings,
+  testReminderPreset,
 } from "./voiceSettings.js";
+import { isPastReminderWindow } from "./voiceReminderLogic.js";
 import { loadAutoUpdateSettings } from "./autoUpdateSettings.js";
 import { canSafelyAutoUpdate } from "./safeAutoUpdate.js";
 import { startServiceWorkerUpdates } from "./swUpdate.js";
@@ -486,6 +493,13 @@ export default function App() {
                   .sort((a, b) => a.time.localeCompare(b.time))
                   .map((dose) => {
                     const status = displayStatus(dose, now);
+                    const pastWindow =
+                      status !== "done" &&
+                      isPastReminderWindow(
+                        getScheduledAt(dose.time, now).getTime(),
+                        now.getTime(),
+                        voiceSettings.reminderWindowMinutes,
+                      );
                     return (
                       <div key={dose.id} className={`dose-row ${status}`}>
                         <div className="dose-status">
@@ -501,9 +515,20 @@ export default function App() {
                               <strong>使用済み</strong>
                               <small>{dose.completedAt}に確認</small>
                             </>
+                          ) : pastWindow ? (
+                            <>
+                              <strong>未使用</strong>
+                              <small>
+                                予定時刻から
+                                {voiceSettings.reminderWindowMinutes}
+                                分以上経過
+                              </small>
+                            </>
                           ) : (
                             <>
-                              <strong>予定あり</strong>
+                              <strong>
+                                {status === "late" ? "未使用" : "予定あり"}
+                              </strong>
                               <small>まだ使用していません</small>
                             </>
                           )}
@@ -806,23 +831,37 @@ export default function App() {
             </label>
             <label className="toggle-row">
               <span>
-                <strong>再通知間隔</strong>
-                <small>確認中は1分。運用時は10分に戻してください</small>
+                <strong>再通知スケジュール</strong>
+                <small>
+                  本番は{PRODUCTION_REMINDER_INTERVAL_MINUTES}分間隔・
+                  {PRODUCTION_REMINDER_WINDOW_MINUTES}
+                  分で終了。確認時はテスト（
+                  {TEST_REMINDER_INTERVAL_MINUTES}分 /{" "}
+                  {TEST_REMINDER_WINDOW_MINUTES}分）を選べます
+                </small>
               </span>
               <select
                 className="interval-select"
-                aria-label="再通知間隔"
-                value={voiceSettings.reminderIntervalMinutes}
-                onChange={(event) =>
+                aria-label="再通知スケジュール"
+                value={isTestReminderPreset(voiceSettings) ? "test" : "production"}
+                onChange={(event) => {
+                  const preset =
+                    event.target.value === "test"
+                      ? testReminderPreset()
+                      : productionReminderPreset();
                   setVoiceSettings((current) => ({
                     ...current,
-                    reminderIntervalMinutes: Number(event.target.value),
-                  }))
-                }
+                    ...preset,
+                  }));
+                }}
               >
-                <option value={TEST_REMINDER_INTERVAL_MINUTES}>1分</option>
-                <option value={PRODUCTION_REMINDER_INTERVAL_MINUTES}>
-                  10分
+                <option value="production">
+                  運用 {PRODUCTION_REMINDER_INTERVAL_MINUTES}分 /{" "}
+                  {PRODUCTION_REMINDER_WINDOW_MINUTES}分
+                </option>
+                <option value="test">
+                  テスト {TEST_REMINDER_INTERVAL_MINUTES}分 /{" "}
+                  {TEST_REMINDER_WINDOW_MINUTES}分
                 </option>
               </select>
             </label>

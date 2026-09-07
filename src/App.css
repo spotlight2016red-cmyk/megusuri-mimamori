@@ -909,7 +909,8 @@ button {
 .interval-select {
   border: 1px solid var(--line);
   border-radius: 11px;
-  min-width: 96px;
+  min-width: 148px;
+  max-width: 52vw;
   padding: 8px 10px;
   background: #fff;
 }

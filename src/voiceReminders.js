@@ -1,16 +1,23 @@
 import { listDoseEntries } from "./medicines.js";
+import { getDeviceDate } from "./testDate.js";
 import { getScheduledAt, toDateKey } from "./time.js";
+import {
+  initialSpokenOffsets,
+  listReminderOffsetsMinutes,
+  phraseForReminderKind,
+  planDoseReminder,
+} from "./voiceReminderLogic.js";
+
+export {
+  duePhrase,
+  finalReminderPhrase,
+  reminderPhrase,
+} from "./voiceReminderLogic.js";
+
+export const VOICE_SPOKEN_SESSION_KEY = "megusuri-voice-spoken-v1";
 
 export function doseKey(medicineId, doseId) {
   return `${medicineId}::${doseId}`;
-}
-
-export function duePhrase(medicineName, doseLabel) {
-  return `${medicineName}、${doseLabel}の点眼時間です`;
-}
-
-export function reminderPhrase(medicineName, doseLabel) {
-  return `${medicineName}、${doseLabel}の点眼がまだ完了していません`;
 }
 
 function pickJapaneseVoice() {
@@ -37,9 +44,34 @@ export function unlockSpeech() {
   window.speechSynthesis.resume();
 }
 
+function readSpokenSession() {
+  try {
+    const raw = window.sessionStorage?.getItem(VOICE_SPOKEN_SESSION_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeSpokenSession(state) {
+  try {
+    window.sessionStorage?.setItem(
+      VOICE_SPOKEN_SESSION_KEY,
+      JSON.stringify(state),
+    );
+  } catch {
+    // ignore
+  }
+}
+
 /**
  * 1つの interval だけで全doseを監視する。
  * completeDose 後は notifyCompleted でそのdoseだけ止める。
+ * 予定時刻判定は端末の実時計（getDeviceDate）を使う。
  */
 class VoiceReminderService {
   constructor() {
@@ -49,7 +81,11 @@ class VoiceReminderService {
     this.busy = false;
     this.current = null;
     this.getMedicines = () => [];
-    this.getSettings = () => ({ enabled: true, reminderIntervalMinutes: 1 });
+    this.getSettings = () => ({
+      enabled: true,
+      reminderIntervalMinutes: 10,
+      reminderWindowMinutes: 30,
+    });
   }
 
   setGetters({ getMedicines, getSettings }) {
@@ -75,13 +111,43 @@ class VoiceReminderService {
     this.queue = [];
     this.current = null;
     this.busy = false;
+    writeSpokenSession({});
     if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+  }
+
+  persistTrackers() {
+    const state = {};
+    for (const [key, tracker] of this.trackers.entries()) {
+      state[key] = {
+        date: tracker.date,
+        spokenOffsets: [...tracker.spokenOffsets],
+        exhausted: Boolean(tracker.exhausted),
+      };
+    }
+    writeSpokenSession(state);
+  }
+
+  loadTrackerFromSession(key, today) {
+    const saved = readSpokenSession()[key];
+    if (!saved || saved.date !== today) return null;
+    return {
+      date: today,
+      spokenOffsets: new Set(
+        (saved.spokenOffsets ?? []).map(Number).filter(Number.isFinite),
+      ),
+      exhausted: Boolean(saved.exhausted),
+    };
   }
 
   notifyCompleted(medicineId, doseId) {
     const key = doseKey(medicineId, doseId);
     this.trackers.delete(key);
     this.queue = this.queue.filter((item) => item.key !== key);
+    const session = readSpokenSession();
+    if (session[key]) {
+      delete session[key];
+      writeSpokenSession(session);
+    }
     if (this.current?.key === key && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
       this.busy = false;
@@ -91,7 +157,14 @@ class VoiceReminderService {
   }
 
   notifyUndone(medicineId, doseId) {
-    this.trackers.delete(doseKey(medicineId, doseId));
+    const key = doseKey(medicineId, doseId);
+    this.trackers.delete(key);
+    const session = readSpokenSession();
+    if (session[key]) {
+      delete session[key];
+      writeSpokenSession(session);
+    }
+    // 次の tick で通知対象時間内なら再監視（過去枠は二重発火しない）
   }
 
   speakTest() {
@@ -99,6 +172,7 @@ class VoiceReminderService {
     this.enqueue({
       key: "test",
       kind: "test",
+      offset: null,
       text: "点眼の音声通知のテストです",
     });
   }
@@ -118,59 +192,100 @@ class VoiceReminderService {
   tick() {
     const settings = this.getSettings();
     if (!settings?.enabled) return;
-    if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+    if (
+      typeof document !== "undefined" &&
+      document.visibilityState !== "visible"
+    ) {
       return;
     }
     if (!("speechSynthesis" in window)) return;
 
     const medicines = this.getMedicines() ?? [];
-    const now = new Date();
+    const now = getDeviceDate();
     const today = toDateKey(now);
-    const intervalMs = Math.max(1, Number(settings.reminderIntervalMinutes) || 1) * 60 * 1000;
+    const intervalMinutes = Math.max(
+      1,
+      Number(settings.reminderIntervalMinutes) || 10,
+    );
+    const windowMinutes = Math.max(
+      intervalMinutes,
+      Number(settings.reminderWindowMinutes) || 30,
+    );
+    const offsets = listReminderOffsetsMinutes(intervalMinutes, windowMinutes);
+    const nowMs = now.getTime();
 
     for (const { medicine, dose } of listDoseEntries(medicines)) {
       const key = doseKey(medicine.id, dose.id);
       if (dose.status === "done") {
-        this.trackers.delete(key);
+        if (this.trackers.has(key)) {
+          this.trackers.delete(key);
+          this.persistTrackers();
+        }
         continue;
       }
 
       const scheduled = getScheduledAt(dose.time, now);
-      if (now.getTime() < scheduled.getTime()) continue;
-
-      let tracker = this.trackers.get(key);
-      if (!tracker || tracker.date !== today) {
-        tracker = { date: today, dueSpoken: false, lastSpokenAt: 0 };
-        this.trackers.set(key, tracker);
-      }
-
-      if (!tracker.dueSpoken) {
-        this.enqueue({
-          key,
-          kind: "due",
-          text: duePhrase(medicine.name, dose.label),
-        });
-        tracker.dueSpoken = true;
-        tracker.lastSpokenAt = now.getTime();
+      const scheduledMs = scheduled.getTime();
+      if (nowMs < scheduledMs) {
         continue;
       }
 
-      if (now.getTime() - tracker.lastSpokenAt >= intervalMs) {
-        this.enqueue({
-          key,
-          kind: "reminder",
-          text: reminderPhrase(medicine.name, dose.label),
-        });
-        tracker.lastSpokenAt = now.getTime();
+      let tracker = this.trackers.get(key);
+      if (!tracker || tracker.date !== today) {
+        tracker =
+          this.loadTrackerFromSession(key, today) ||
+          {
+            date: today,
+            spokenOffsets: initialSpokenOffsets(nowMs, scheduledMs, offsets),
+            exhausted: false,
+          };
+        this.trackers.set(key, tracker);
+        this.persistTrackers();
       }
+
+      if (tracker.exhausted) continue;
+
+      const plan = planDoseReminder({
+        nowMs,
+        scheduledMs,
+        spokenOffsets: tracker.spokenOffsets,
+        intervalMinutes,
+        windowMinutes,
+      });
+
+      tracker.spokenOffsets = plan.spokenOffsets;
+      if (plan.exhausted) {
+        tracker.exhausted = true;
+        this.persistTrackers();
+        continue;
+      }
+
+      if (plan.action !== "speak") {
+        this.persistTrackers();
+        continue;
+      }
+
+      this.enqueue({
+        key,
+        kind: plan.kind,
+        offset: plan.offset,
+        text: phraseForReminderKind(plan.kind, medicine.name, dose.label),
+      });
+      this.persistTrackers();
     }
   }
 
   enqueue(item) {
     const duplicate =
-      this.current?.key === item.key && this.current?.kind === item.kind
-        ? true
-        : this.queue.some((queued) => queued.key === item.key && queued.kind === item.kind);
+      (this.current?.key === item.key &&
+        this.current?.kind === item.kind &&
+        this.current?.offset === item.offset) ||
+      this.queue.some(
+        (queued) =>
+          queued.key === item.key &&
+          queued.kind === item.kind &&
+          queued.offset === item.offset,
+      );
     if (duplicate) return;
     this.queue.push(item);
     this.flush();
@@ -179,7 +294,10 @@ class VoiceReminderService {
   flush() {
     if (this.busy || this.queue.length === 0) return;
     if (!("speechSynthesis" in window)) return;
-    if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+    if (
+      typeof document !== "undefined" &&
+      document.visibilityState !== "visible"
+    ) {
       return;
     }
 
