@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it, beforeEach } from "node:test";
 import {
+  DAILY_RESET_MIGRATED_KEY,
   HISTORY_KEY,
   LAST_ACTIVE_DATE_KEY,
   applyAndPersistDayRollover,
+  loadDailyResetMigrated,
   loadHistory,
   loadLastActiveDate,
 } from "./history.js";
@@ -125,15 +127,69 @@ describe("applyAndPersistDayRollover（疑似日付変更）", () => {
     assert.equal(loadHistory()[yesterday].length, 3);
   });
 
-  it("初回起動ではリセットせず last-active-date だけ今日にする", () => {
+  it("旧版データ(doneあり・last-active-dateなし)は初回だけ upcoming へ移行する", () => {
     saveMedicines(medicinesWithDone);
+    assert.equal(window.localStorage.getItem(LAST_ACTIVE_DATE_KEY), null);
+    assert.equal(window.localStorage.getItem(DAILY_RESET_MIGRATED_KEY), null);
+
+    const first = applyAndPersistDayRollover(
+      loadMedicines([]),
+      new Date(2026, 8, 7, 9, 0, 0),
+    );
+
+    assert.equal(first.didMigrate, true);
+    assert.equal(first.didRollover, false);
+    assert.equal(loadLastActiveDate(), "2026-09-07");
+    assert.equal(loadDailyResetMigrated(), true);
+    assert.equal(window.localStorage.getItem(HISTORY_KEY), null);
+
+    assert.equal(first.medicines[0].id, "a");
+    assert.equal(first.medicines[0].name, "目薬A");
+    assert.equal(first.medicines[0].color, "#0f9f78");
+    assert.equal(first.medicines[0].doses[0].id, "a-morning");
+    assert.equal(first.medicines[0].doses[0].time, "08:00");
+    assert.equal(first.medicines[0].doses[0].label, "朝");
+    assert.equal(first.medicines[0].doses[0].status, "upcoming");
+    assert.equal("completedAt" in first.medicines[0].doses[0], false);
+    assert.equal(first.medicines[0].doses[1].status, "upcoming");
+    assert.equal(first.medicines[1].doses[0].status, "upcoming");
+    assert.equal("completedAt" in first.medicines[1].doses[0], false);
+
+    const stored = JSON.parse(window.localStorage.getItem(STORAGE_KEY));
+    assert.equal(stored[0].doses[0].status, "upcoming");
+    assert.equal("completedAt" in stored[0].doses[0], false);
+
+    // 同日に done にしてから再起動しても、移行済みフラグで再リセットしない
+    const afterUse = structuredClone(first.medicines);
+    afterUse[0].doses[0].status = "done";
+    afterUse[0].doses[0].completedAt = "08:05";
+    saveMedicines(afterUse);
+
+    const second = applyAndPersistDayRollover(
+      loadMedicines([]),
+      new Date(2026, 8, 7, 10, 0, 0),
+    );
+    assert.equal(second.didMigrate, false);
+    assert.equal(second.didRollover, false);
+    assert.equal(second.medicines[0].doses[0].status, "done");
+    assert.equal(second.medicines[0].doses[0].completedAt, "08:05");
+    assert.equal(window.localStorage.getItem(HISTORY_KEY), null);
+  });
+
+  it("既に last-active-date がある端末では移行リセットしない", () => {
+    saveMedicines(medicinesWithDone);
+    window.localStorage.setItem(LAST_ACTIVE_DATE_KEY, "2026-09-07");
+
     const result = applyAndPersistDayRollover(
       loadMedicines([]),
       new Date(2026, 8, 7, 9, 0, 0),
     );
+
+    assert.equal(result.didMigrate, false);
     assert.equal(result.didRollover, false);
-    assert.equal(loadLastActiveDate(), "2026-09-07");
     assert.equal(result.medicines[0].doses[0].status, "done");
+    assert.equal(result.medicines[0].doses[0].completedAt, "07:55");
+    assert.equal(loadDailyResetMigrated(), true);
     assert.equal(window.localStorage.getItem(HISTORY_KEY), null);
   });
 });

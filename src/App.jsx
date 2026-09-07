@@ -16,6 +16,7 @@ import {
   historyEntriesFromMedicines,
   listPastHistoryKeys,
   loadHistory,
+  loadLastActiveDate,
 } from "./history.js";
 import { loadMedicines, saveMedicines } from "./storage.js";
 import {
@@ -39,6 +40,8 @@ import {
   loadVoiceSettings,
   saveVoiceSettings,
 } from "./voiceSettings.js";
+import { loadAutoUpdateSettings } from "./autoUpdateSettings.js";
+import { canSafelyAutoUpdate } from "./safeAutoUpdate.js";
 import { startServiceWorkerUpdates } from "./swUpdate.js";
 
 function bootMedicines() {
@@ -62,6 +65,8 @@ export default function App() {
   const installPromptRef = useRef(null);
   const medicinesRef = useRef(medicines);
   const voiceSettingsRef = useRef(voiceSettings);
+  const pendingRef = useRef(pending);
+  const autoUpdateSettingsRef = useRef(loadAutoUpdateSettings());
   const swUpdateRef = useRef(null);
 
   const syncDayBoundary = () => {
@@ -69,7 +74,7 @@ export default function App() {
       medicinesRef.current,
       new Date(),
     );
-    if (!result.didRollover) return false;
+    if (!result.didRollover && !result.didMigrate) return false;
     voiceReminderService.resetAll();
     medicinesRef.current = result.medicines;
     setMedicines(result.medicines);
@@ -90,6 +95,10 @@ export default function App() {
   useEffect(() => {
     medicinesRef.current = medicines;
   }, [medicines]);
+
+  useEffect(() => {
+    pendingRef.current = pending;
+  }, [pending]);
 
   useEffect(() => {
     voiceSettingsRef.current = voiceSettings;
@@ -119,6 +128,22 @@ export default function App() {
     }
     const controller = startServiceWorkerUpdates({
       onUpdateAvailable: () => setUpdateAvailable(true),
+      canAutoApplyUpdate: () => {
+        try {
+          // 日付またぎ処理を先に済ませ、競合を避ける
+          syncDayBoundary();
+          return canSafelyAutoUpdate({
+            now: new Date(),
+            settings: autoUpdateSettingsRef.current,
+            medicines: medicinesRef.current,
+            pendingConfirmOpen: pendingRef.current != null,
+            isSpeaking: voiceReminderService.isSpeaking(),
+            lastActiveDate: loadLastActiveDate(),
+          });
+        } catch {
+          return false;
+        }
+      },
     });
     swUpdateRef.current = controller;
     return () => {

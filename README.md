@@ -29,14 +29,14 @@ npm run preview
 
 点眼データは `localStorage['megusuri-medicines-v2']` に保存します。公開版と同じ配列形式を維持しており、未知フィールドは削除しません。
 
-日付またぎ時は前日スナップショットを `localStorage['megusuri-history-v1']` に保存し、全 dose を `upcoming` に戻します。最終稼働日は `localStorage['megusuri-last-active-date']` です。
+日付またぎ時は前日スナップショットを `localStorage['megusuri-history-v1']` に保存し、全 dose を `upcoming` に戻します。最終稼働日は `localStorage['megusuri-last-active-date']` です。旧版から初めて日次リセット対応版へ入る端末は、一度だけ `upcoming` へ移行し `localStorage['megusuri-daily-reset-migrated-v1']` を立てます（過去履歴は推測保存しません）。
 
 音声通知の設定だけ、別キー `localStorage['megusuri-voice-settings-v1']` に保存します。
 
 ## PWA / 音声通知
 
 - HTTPS 環境で Android Chrome の「ホーム画面に追加」に対応
-- 新バージョン検知時は「更新する」バナーを表示（自動では強制リロードしない）
+- 新バージョン検知時は「更新する」バナーを表示。夜間 02:00〜04:00 かつ点眼が安全なときだけ自動更新・再読み込みする
 - 画面常時表示（Wake Lock）に対応
 - 未点眼時はタブレット自身が Web Speech API（`speechSynthesis` / `ja-JP`）で読み上げ
 - 音声は画面表示中のみ動作します（バックグラウンドでは制約あり）

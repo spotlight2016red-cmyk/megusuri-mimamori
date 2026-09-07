@@ -103,6 +103,18 @@ class VoiceReminderService {
     });
   }
 
+  /** 読み上げ中・キュー待ちを含む。自動更新の安全判定用。 */
+  isSpeaking() {
+    if (this.busy || this.current || this.queue.length > 0) return true;
+    if ("speechSynthesis" in window) {
+      return (
+        Boolean(window.speechSynthesis.speaking) ||
+        Boolean(window.speechSynthesis.pending)
+      );
+    }
+    return false;
+  }
+
   tick() {
     const settings = this.getSettings();
     if (!settings?.enabled) return;

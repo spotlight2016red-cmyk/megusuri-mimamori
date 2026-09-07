@@ -14,11 +14,12 @@ export function shouldAnnounceInstalledWorker(workerState, hasController) {
 }
 
 /**
- * Service Worker の登録・更新検知・ユーザー操作での切替を管理する。
- * localStorage には一切触れない。
+ * Service Worker の登録・更新検知・手動/安全帯自動切替を管理する。
+ * localStorage には一切触れない（データ保持は呼び出し側の責務）。
  */
 export function startServiceWorkerUpdates({
   onUpdateAvailable,
+  canAutoApplyUpdate,
   register = (url) => navigator.serviceWorker.register(url),
   swUrl = "/sw.js",
   checkIntervalMs = UPDATE_CHECK_INTERVAL_MS,
@@ -32,14 +33,19 @@ export function startServiceWorkerUpdates({
   }
 
   let registration = null;
-  let userRequestedUpdate = false;
+  let reloadRequested = false;
   let announced = false;
   let intervalId = null;
+  let autoApplyInFlight = false;
 
   const announce = () => {
     if (announced) return;
     announced = true;
-    onUpdateAvailable?.();
+    try {
+      onUpdateAvailable?.();
+    } catch {
+      // バナー表示失敗は無視
+    }
   };
 
   const watchInstalling = (worker) => {
@@ -52,6 +58,7 @@ export function startServiceWorkerUpdates({
         )
       ) {
         announce();
+        void maybeAutoApply();
       }
     });
   };
@@ -65,13 +72,14 @@ export function startServiceWorkerUpdates({
       )
     ) {
       announce();
+      void maybeAutoApply();
     }
     reg.addEventListener("updatefound", () => {
       watchInstalling(reg.installing);
     });
   };
 
-  const checkForUpdate = async () => {
+  const checkForUpdate = async ({ tryAuto = true } = {}) => {
     try {
       if (!registration) {
         const reg = await register(swUrl);
@@ -85,35 +93,69 @@ export function startServiceWorkerUpdates({
         )
       ) {
         announce();
+        if (tryAuto) await maybeAutoApply();
       }
     } catch {
-      // オフライン等では無視
+      // オフライン等では無視（翌日利用に影響させない）
     }
   };
 
   const applyUpdate = async () => {
-    if (!registration?.waiting) {
-      await checkForUpdate();
+    try {
+      if (!registration?.waiting) {
+        await checkForUpdate({ tryAuto: false });
+      }
+      if (!registration?.waiting) return false;
+      reloadRequested = true;
+      registration.waiting.postMessage(SKIP_WAITING_MESSAGE);
+      return true;
+    } catch {
+      reloadRequested = false;
+      return false;
     }
-    if (!registration?.waiting) return false;
-    userRequestedUpdate = true;
-    registration.waiting.postMessage(SKIP_WAITING_MESSAGE);
-    return true;
+  };
+
+  const maybeAutoApply = async () => {
+    if (autoApplyInFlight || reloadRequested) return false;
+    try {
+      if (!registration?.waiting) return false;
+      if (typeof canAutoApplyUpdate === "function") {
+        let allowed = false;
+        try {
+          allowed = Boolean(canAutoApplyUpdate());
+        } catch {
+          return false;
+        }
+        if (!allowed) return false;
+      } else {
+        return false;
+      }
+      autoApplyInFlight = true;
+      return await applyUpdate();
+    } catch {
+      return false;
+    } finally {
+      autoApplyInFlight = false;
+    }
   };
 
   const onControllerChange = () => {
-    if (!userRequestedUpdate) return;
-    window.location.reload();
+    if (!reloadRequested) return;
+    try {
+      window.location.reload();
+    } catch {
+      // reload 失敗でも通常利用は継続
+    }
   };
 
   const onVisible = () => {
     if (document.visibilityState === "visible") {
-      checkForUpdate();
+      void checkForUpdate();
     }
   };
 
   const onPageshow = () => {
-    checkForUpdate();
+    void checkForUpdate();
   };
 
   navigator.serviceWorker.addEventListener(
@@ -123,14 +165,15 @@ export function startServiceWorkerUpdates({
   document.addEventListener("visibilitychange", onVisible);
   window.addEventListener("pageshow", onPageshow);
 
-  checkForUpdate();
+  void checkForUpdate();
   intervalId = window.setInterval(() => {
-    checkForUpdate();
+    void checkForUpdate();
   }, checkIntervalMs);
 
   return {
     checkForUpdate,
     applyUpdate,
+    maybeAutoApply,
     stop() {
       if (intervalId != null) window.clearInterval(intervalId);
       navigator.serviceWorker.removeEventListener(

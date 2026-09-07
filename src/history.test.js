@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   applyDayRollover,
+  applyLegacyDailyResetMigration,
   formatHistoryStatus,
   listPastHistoryKeys,
   resetDosesForNewDay,
@@ -172,6 +173,26 @@ describe("applyDayRollover", () => {
     assert.equal(reset[0].doses[0].label, "朝");
     assert.equal(reset[0].doses[0].time, "08:00");
     assert.equal(reset[0].doses[0].status, "upcoming");
+  });
+});
+
+describe("applyLegacyDailyResetMigration", () => {
+  it("done を upcoming にし completedAt を消すが他フィールドは保持する", () => {
+    const medicines = sampleMedicines();
+    const result = applyLegacyDailyResetMigration(medicines, todayKey);
+
+    assert.equal(result.didMigrate, true);
+    assert.equal(result.lastActiveDate, todayKey);
+    assert.equal(result.history, null);
+
+    assert.equal(result.medicines[0].name, "目薬A");
+    assert.equal(result.medicines[0].color, "#0f9f78");
+    assert.equal(result.medicines[0].extra, "keep-me");
+    assert.equal(result.medicines[0].doses[0].id, "a-morning");
+    assert.equal(result.medicines[0].doses[0].time, "08:00");
+    assert.equal(result.medicines[0].doses[0].note, "keep-dose");
+    assert.equal(result.medicines[0].doses[0].status, "upcoming");
+    assert.equal("completedAt" in result.medicines[0].doses[0], false);
   });
 });
 

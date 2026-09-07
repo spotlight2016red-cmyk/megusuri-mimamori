@@ -4,6 +4,8 @@ import { toDateKey } from "./time.js";
 
 export const HISTORY_KEY = "megusuri-history-v1";
 export const LAST_ACTIVE_DATE_KEY = "megusuri-last-active-date";
+/** 旧版→日次リセット対応版の初回移行済みフラグ。 */
+export const DAILY_RESET_MIGRATED_KEY = "megusuri-daily-reset-migrated-v1";
 /** 以前の試作キー。あれば読み取り、正規キーへ寄せる。 */
 const LEGACY_LAST_ACTIVE_DATE_KEY = "megusuri-last-active-date-v1";
 
@@ -116,6 +118,31 @@ export function saveLastActiveDate(dateKey) {
   }
 }
 
+export function loadDailyResetMigrated() {
+  try {
+    return window.localStorage.getItem(DAILY_RESET_MIGRATED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function saveDailyResetMigrated() {
+  window.localStorage.setItem(DAILY_RESET_MIGRATED_KEY, "1");
+}
+
+/**
+ * 旧版（last-active-date 無し）からの初回移行。
+ * done を upcoming に戻すが、日付が不明なため履歴には保存しない。
+ */
+export function applyLegacyDailyResetMigration(medicines, todayKey) {
+  return {
+    medicines: resetDosesForNewDay(medicines),
+    history: null,
+    lastActiveDate: todayKey,
+    didMigrate: true,
+  };
+}
+
 /**
  * 日付変更チェックの共通入口。
  * 起動時 / pageshow / visibilitychange / 定期チェックから呼ぶ。
@@ -123,6 +150,28 @@ export function saveLastActiveDate(dateKey) {
 export function applyAndPersistDayRollover(medicines, now = new Date()) {
   const todayKey = toDateKey(now);
   const previousLastActive = loadLastActiveDate();
+  const alreadyMigrated = loadDailyResetMigrated();
+
+  // 旧版→新版: last-active-date が無い既存端末のみ、一度だけリセット
+  if (!alreadyMigrated && !previousLastActive) {
+    const migration = applyLegacyDailyResetMigration(medicines, todayKey);
+    saveMedicines(migration.medicines);
+    saveLastActiveDate(migration.lastActiveDate);
+    saveDailyResetMigrated();
+    return {
+      medicines: migration.medicines,
+      history: loadHistory(),
+      lastActiveDate: migration.lastActiveDate,
+      didRollover: false,
+      didMigrate: true,
+    };
+  }
+
+  // 既に last-active-date がある正常端末は移行処理せず、フラグだけ揃える
+  if (!alreadyMigrated && previousLastActive) {
+    saveDailyResetMigrated();
+  }
+
   const result = applyDayRollover({
     medicines,
     history: loadHistory(),
@@ -137,7 +186,10 @@ export function applyAndPersistDayRollover(medicines, now = new Date()) {
   if (result.lastActiveDate !== previousLastActive) {
     saveLastActiveDate(result.lastActiveDate);
   }
-  return result;
+  return {
+    ...result,
+    didMigrate: false,
+  };
 }
 
 export function listPastHistoryKeys(history, todayKey) {
