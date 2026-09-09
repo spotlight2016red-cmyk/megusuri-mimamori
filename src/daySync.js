@@ -2,12 +2,17 @@ import {
   applyAndPersistDayRollover,
   loadLastActiveDate,
   loadDailyResetMigrated,
+  loadHistory,
+  resetDosesForNewDay,
+  saveLastActiveDate,
   DAILY_RESET_MIGRATED_KEY,
   LAST_ACTIVE_DATE_KEY,
+  HISTORY_KEY,
 } from "./history.js";
-import { loadMedicines } from "./storage.js";
+import { loadMedicines, saveMedicines } from "./storage.js";
 import {
   TEST_DATE_KEY,
+  clearTestDateSettings,
   getCurrentDate,
   getCurrentDateKey,
   getDeviceDate,
@@ -23,6 +28,7 @@ const debugState = {
   lastRolloverDateKey: null,
   lastCheckDidRollover: false,
   lastCheckDidMigrate: false,
+  lastManualTodayResetAt: null,
 };
 
 export function getDaySyncDebugState() {
@@ -35,6 +41,7 @@ export function resetDaySyncDebugStateForTests() {
   debugState.lastRolloverDateKey = null;
   debugState.lastCheckDidRollover = false;
   debugState.lastCheckDidMigrate = false;
+  debugState.lastManualTodayResetAt = null;
 }
 
 /**
@@ -70,6 +77,45 @@ export function runDayBoundarySync({
     checkedAt,
     source,
     inputSource: Array.isArray(stored) ? "localStorage" : "react",
+  };
+}
+
+/**
+ * 手動復旧: 今日の状態をリセットして通常運転を再開する。
+ * 日跨ぎではないため履歴へは一切書き込まない。
+ */
+export function resetTodayAndResume({
+  reactMedicines = null,
+  deviceNow = getDeviceDate(),
+} = {}) {
+  const historyBefore = loadHistory();
+
+  clearTestDateSettings();
+  loadTestDateSettings();
+
+  const todayKey = toDateKey(deviceNow);
+  const stored = loadMedicines(null);
+  const input = Array.isArray(stored) ? stored : reactMedicines ?? [];
+  const medicines = resetDosesForNewDay(input);
+
+  saveMedicines(medicines);
+  saveLastActiveDate(todayKey);
+
+  debugState.lastManualTodayResetAt = deviceNow.toISOString();
+  debugState.lastCheckAt = deviceNow.toISOString();
+  debugState.lastCheckSource = "manual-today-reset";
+  debugState.lastCheckDidRollover = false;
+  debugState.lastCheckDidMigrate = false;
+  debugState.lastRolloverDateKey = todayKey;
+
+  return {
+    medicines,
+    history: historyBefore,
+    historyRawBefore: window.localStorage.getItem(HISTORY_KEY),
+    historyRawAfter: window.localStorage.getItem(HISTORY_KEY),
+    todayKey,
+    testDateSettings: getTestDateSettings(),
+    lastActiveDate: loadLastActiveDate(),
   };
 }
 

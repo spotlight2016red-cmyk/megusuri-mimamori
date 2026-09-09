@@ -61,6 +61,7 @@ import {
 } from "./testDate.js";
 import {
   collectDaySyncDebugSnapshot,
+  resetTodayAndResume,
   runDayBoundarySync,
 } from "./daySync.js";
 
@@ -88,6 +89,7 @@ export default function App() {
     loadTestDateSettings(),
   );
   const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [confirmTodayReset, setConfirmTodayReset] = useState(false);
   const wakeLockRef = useRef(null);
   const installPromptRef = useRef(null);
   const medicinesRef = useRef(medicines);
@@ -315,6 +317,24 @@ export default function App() {
     } else {
       showToast(`テスト日付：${formatTestDateLabel(getCurrentDateKey())}`);
     }
+  };
+
+  const handleConfirmTodayReset = () => {
+    const result = resetTodayAndResume({
+      reactMedicines: medicinesRef.current,
+      deviceNow: getDeviceDate(),
+    });
+    setTestDateSettings(loadTestDateSettings());
+    suppressMedicinesPersistRef.current = true;
+    medicinesRef.current = result.medicines;
+    setMedicines(result.medicines);
+    setHistory(result.history);
+    setNow(getCurrentDate());
+    setDayDebugTick((value) => value + 1);
+    setConfirmTodayReset(false);
+    setSheet(null);
+    voiceReminderService.resetAll();
+    showToast("今日の状態をリセットしました。通常運転を再開します。");
   };
 
   const requestComplete = (medicine, dose) => {
@@ -979,6 +999,13 @@ export default function App() {
                 >
                   日次チェックを今すぐ実行
                 </button>
+                <button
+                  type="button"
+                  className="secondary-action danger-action"
+                  onClick={() => setConfirmTodayReset(true)}
+                >
+                  今日の状態をリセットして再開
+                </button>
               </div>
 
               <div className="day-debug-panel">
@@ -1076,6 +1103,38 @@ export default function App() {
               onClick={cancelComplete}
             >
               まだ使用していません
+            </button>
+          </div>
+        </div>
+      )}
+
+      {confirmTodayReset && (
+        <div
+          className="modal-backdrop"
+          onClick={() => setConfirmTodayReset(false)}
+        >
+          <div
+            className="modal confirm-modal"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2>今日の点眼状態をリセットしますか？</h2>
+            <p>
+              本日の「使用済み」状態はすべて未使用に戻ります。
+              過去の履歴と目薬の設定は削除されません。
+            </p>
+            <button
+              type="button"
+              className="primary-action large"
+              onClick={handleConfirmTodayReset}
+            >
+              リセットして再開
+            </button>
+            <button
+              type="button"
+              className="secondary-action large"
+              onClick={() => setConfirmTodayReset(false)}
+            >
+              キャンセル
             </button>
           </div>
         </div>

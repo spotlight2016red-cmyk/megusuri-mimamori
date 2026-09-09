@@ -1,24 +1,32 @@
 import assert from "node:assert/strict";
 import { describe, it, beforeEach } from "node:test";
 import {
+  HISTORY_KEY,
   DAILY_RESET_MIGRATED_KEY,
   LAST_ACTIVE_DATE_KEY,
   applyAndPersistDayRollover,
   loadHistory,
   loadLastActiveDate,
+  saveHistory,
 } from "./history.js";
 import { STORAGE_KEY, loadMedicines, saveMedicines } from "./storage.js";
 import {
   TEST_DATE_KEY,
   clearTestDateSettings,
   getCurrentDateKey,
+  getTestDateSettings,
   resetTestDateCacheForTests,
   saveTestDateSettings,
 } from "./testDate.js";
 import {
   resetDaySyncDebugStateForTests,
+  resetTodayAndResume,
   runDayBoundarySync,
 } from "./daySync.js";
+import {
+  VOICE_SPOKEN_SESSION_KEY,
+  voiceReminderService,
+} from "./voiceReminders.js";
 
 function createMemoryStorage() {
   const store = new Map();
@@ -203,5 +211,187 @@ describe("実時計日次同期 A/B/C", () => {
     assert.ok(lastActiveIdx >= 0);
     assert.ok(historyIdx < medicinesIdx);
     assert.ok(medicinesIdx < lastActiveIdx);
+  });
+});
+
+describe("今日の状態をリセットして再開", () => {
+  beforeEach(() => {
+    globalThis.window = {
+      localStorage: createMemoryStorage(),
+      sessionStorage: createMemoryStorage(),
+      speechSynthesis: {
+        speaking: false,
+        pending: false,
+        cancel() {},
+        resume() {},
+        speak() {},
+        getVoices() {
+          return [];
+        },
+        addEventListener() {},
+      },
+    };
+    resetTestDateCacheForTests();
+    resetDaySyncDebugStateForTests();
+    voiceReminderService.resetAll();
+  });
+
+  it("A: 未来の last-active と done でも端末今日へ復旧する", () => {
+    const doneWithExtra = [
+      {
+        id: "a",
+        shortName: "A",
+        name: "目薬A",
+        color: "#0f9f78",
+        extra: "keep-me",
+        doses: [
+          {
+            id: "a1",
+            label: "朝",
+            time: "08:00",
+            status: "done",
+            completedAt: "08:01",
+            note: "keep-dose",
+          },
+          {
+            id: "a2",
+            label: "夜",
+            time: "21:00",
+            status: "done",
+            completedAt: "21:02",
+          },
+        ],
+      },
+    ];
+    saveMedicines(doneWithExtra);
+    window.localStorage.setItem(LAST_ACTIVE_DATE_KEY, "2026-09-12");
+    window.localStorage.setItem(DAILY_RESET_MIGRATED_KEY, "1");
+    saveTestDateSettings({ enabled: true, dateKey: "2026-09-11" });
+
+    const deviceNow = new Date(2026, 8, 9, 12, 0, 0);
+    const result = resetTodayAndResume({
+      reactMedicines: doneWithExtra,
+      deviceNow,
+    });
+
+    assert.equal(result.todayKey, "2026-09-09");
+    assert.equal(loadLastActiveDate(), "2026-09-09");
+    assert.equal(getTestDateSettings().enabled, false);
+    assert.equal(getTestDateSettings().dateKey, null);
+    assert.equal(result.medicines[0].doses[0].status, "upcoming");
+    assert.equal(result.medicines[0].doses[1].status, "upcoming");
+    assert.equal("completedAt" in result.medicines[0].doses[0], false);
+    assert.equal("completedAt" in result.medicines[0].doses[1], false);
+    assert.equal(
+      JSON.parse(window.localStorage.getItem(STORAGE_KEY))[0].doses[0].status,
+      "upcoming",
+    );
+  });
+
+  it("B: 過去履歴は変更されない", () => {
+    const past = {
+      "2026-09-07": [
+        {
+          medicineId: "a",
+          medicineName: "目薬A",
+          doseId: "a1",
+          label: "朝",
+          time: "08:00",
+          status: "done",
+          completedAt: "08:03",
+        },
+      ],
+    };
+    saveHistory(past);
+    saveMedicines(threeDone);
+    window.localStorage.setItem(LAST_ACTIVE_DATE_KEY, "2026-09-12");
+    const rawBefore = window.localStorage.getItem(HISTORY_KEY);
+
+    resetTodayAndResume({
+      reactMedicines: threeDone,
+      deviceNow: new Date(2026, 8, 9, 10, 0, 0),
+    });
+
+    assert.equal(window.localStorage.getItem(HISTORY_KEY), rawBefore);
+    assert.deepEqual(loadHistory(), past);
+  });
+
+  it("C: 目薬名・時刻・ID・未知フィールドは保持", () => {
+    const sample = [
+      {
+        id: "a",
+        shortName: "A",
+        name: "目薬A",
+        color: "#0f9f78",
+        mystery: 42,
+        doses: [
+          {
+            id: "a1",
+            label: "朝",
+            time: "08:00",
+            status: "done",
+            completedAt: "08:01",
+            customFlag: true,
+          },
+        ],
+      },
+    ];
+    saveMedicines(sample);
+    window.localStorage.setItem(LAST_ACTIVE_DATE_KEY, "2030-01-01");
+
+    const result = resetTodayAndResume({
+      reactMedicines: sample,
+      deviceNow: new Date(2026, 8, 9, 10, 0, 0),
+    });
+
+    assert.equal(result.medicines[0].id, "a");
+    assert.equal(result.medicines[0].name, "目薬A");
+    assert.equal(result.medicines[0].shortName, "A");
+    assert.equal(result.medicines[0].color, "#0f9f78");
+    assert.equal(result.medicines[0].mystery, 42);
+    assert.equal(result.medicines[0].doses[0].id, "a1");
+    assert.equal(result.medicines[0].doses[0].label, "朝");
+    assert.equal(result.medicines[0].doses[0].time, "08:00");
+    assert.equal(result.medicines[0].doses[0].customFlag, true);
+    assert.equal(result.medicines[0].doses[0].status, "upcoming");
+  });
+
+  it("D: 音声通知 tracker / session を破棄して監視再開できる", () => {
+    saveMedicines(threeDone);
+    window.localStorage.setItem(LAST_ACTIVE_DATE_KEY, "2026-09-12");
+    voiceReminderService.trackers.set("a::a1", {
+      date: "2026-09-12",
+      spokenOffsets: new Set([0]),
+      exhausted: false,
+    });
+    voiceReminderService.queue.push({ key: "a::a1", kind: "due" });
+    window.sessionStorage.setItem(
+      VOICE_SPOKEN_SESSION_KEY,
+      JSON.stringify({ "a::a1": { date: "2026-09-12", spokenOffsets: [0] } }),
+    );
+
+    const result = resetTodayAndResume({
+      reactMedicines: threeDone,
+      deviceNow: new Date(2026, 8, 9, 10, 0, 0),
+    });
+    // App と同じく resetAll を呼ぶ
+    voiceReminderService.resetAll();
+    voiceReminderService.setGetters({
+      getMedicines: () => result.medicines,
+      getSettings: () => ({
+        enabled: true,
+        reminderIntervalMinutes: 1,
+        reminderWindowMinutes: 3,
+      }),
+    });
+
+    assert.equal(voiceReminderService.trackers.size, 0);
+    assert.equal(voiceReminderService.queue.length, 0);
+    assert.equal(window.sessionStorage.getItem(VOICE_SPOKEN_SESSION_KEY), "{}");
+
+    // 今日の upcoming を基準に tick で再監視できる
+    voiceReminderService.tick();
+    // 10:00 時点で 08:00 は予定経過のため tracker が作られる
+    assert.ok(voiceReminderService.trackers.size >= 1);
   });
 });

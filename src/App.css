@@ -969,6 +969,12 @@ button {
   margin-top: 8px;
 }
 
+.danger-action {
+  color: #8a2f2f;
+  border-color: #e2b4b4;
+  background: #fff5f5;
+}
+
 .day-debug-panel {
   margin-top: 18px;
   padding: 12px;
