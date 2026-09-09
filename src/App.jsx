@@ -11,7 +11,6 @@ import {
   updateMedicine,
 } from "./medicines.js";
 import {
-  applyAndPersistDayRollover,
   formatHistoryStatus,
   historyEntriesFromMedicines,
   listPastHistoryKeys,
@@ -60,12 +59,17 @@ import {
   nextTestDateSettings,
   saveTestDateSettings,
 } from "./testDate.js";
+import {
+  collectDaySyncDebugSnapshot,
+  runDayBoundarySync,
+} from "./daySync.js";
 
 function bootMedicines() {
-  return applyAndPersistDayRollover(
-    loadMedicines(cloneSeed()),
-    getCurrentDate(),
-  ).medicines;
+  return runDayBoundarySync({
+    now: getCurrentDate(),
+    source: "boot",
+    reactMedicines: loadMedicines(cloneSeed()),
+  }).medicines;
 }
 
 export default function App() {
@@ -91,24 +95,37 @@ export default function App() {
   const pendingRef = useRef(pending);
   const autoUpdateSettingsRef = useRef(loadAutoUpdateSettings());
   const swUpdateRef = useRef(null);
+  const suppressMedicinesPersistRef = useRef(false);
+  const [dayDebugTick, setDayDebugTick] = useState(0);
 
-  const syncDayBoundary = () => {
-    const result = applyAndPersistDayRollover(
-      medicinesRef.current,
-      getCurrentDate(),
-    );
-    if (!result.didRollover && !result.didMigrate) return false;
-    voiceReminderService.resetAll();
+  const syncDayBoundary = (source = "periodic") => {
+    const result = runDayBoundarySync({
+      now: getCurrentDate(),
+      source,
+      reactMedicines: medicinesRef.current,
+    });
+
+    // didRollover の有無に関わらず、常に LS 起点の結果を React へ反映する
+    // （バックグラウンドで persist 済み・UI 未更新の取り残しを防ぐ）
+    suppressMedicinesPersistRef.current = true;
     medicinesRef.current = result.medicines;
     setMedicines(result.medicines);
     setHistory(result.history);
     setNow(getCurrentDate());
-    return true;
+    setDayDebugTick((value) => value + 1);
+
+    if (result.didRollover || result.didMigrate) {
+      voiceReminderService.resetAll();
+    }
+    return Boolean(result.didRollover || result.didMigrate);
   };
 
   useEffect(() => {
     const clockTimer = window.setInterval(() => setNow(getCurrentDate()), 1000);
-    const dayTimer = window.setInterval(() => syncDayBoundary(), 60_000);
+    const dayTimer = window.setInterval(
+      () => syncDayBoundary("periodic-60s"),
+      60_000,
+    );
     return () => {
       window.clearInterval(clockTimer);
       window.clearInterval(dayTimer);
@@ -133,6 +150,10 @@ export default function App() {
   }, [uiSettings]);
 
   useEffect(() => {
+    if (suppressMedicinesPersistRef.current) {
+      suppressMedicinesPersistRef.current = false;
+      return;
+    }
     saveMedicines(medicines);
   }, [medicines]);
 
@@ -154,7 +175,7 @@ export default function App() {
       canAutoApplyUpdate: () => {
         try {
           // 日付またぎ処理を先に済ませ、競合を避ける
-          syncDayBoundary();
+          syncDayBoundary("sw-auto-update");
           return canSafelyAutoUpdate({
             now: getDeviceDate(),
             settings: autoUpdateSettingsRef.current,
@@ -192,11 +213,14 @@ export default function App() {
 
   useEffect(() => {
     const onPageshow = () => {
-      syncDayBoundary();
+      syncDayBoundary("pageshow");
+    };
+    const onFocus = () => {
+      syncDayBoundary("focus");
     };
     const onVisibility = async () => {
       if (document.visibilityState === "visible") {
-        syncDayBoundary();
+        syncDayBoundary("visibilitychange");
       }
       if (document.visibilityState !== "visible" || !wakeLockOn) return;
       if (!("wakeLock" in navigator)) return;
@@ -207,15 +231,25 @@ export default function App() {
       }
     };
     window.addEventListener("pageshow", onPageshow);
+    window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
       window.removeEventListener("pageshow", onPageshow);
+      window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [wakeLockOn]);
 
   const todayKey = toDateKey(now);
   const deviceNow = getDeviceDate();
+  const dayDebug = useMemo(
+    () =>
+      collectDaySyncDebugSnapshot({
+        medicines,
+        now,
+      }),
+    [medicines, now, dayDebugTick],
+  );
   const entries = useMemo(
     () => sortDoseEntries(listDoseEntries(medicines)),
     [medicines],
@@ -237,14 +271,17 @@ export default function App() {
   const applyTestDateAndSync = (nextSettings) => {
     const saved = saveTestDateSettings(nextSettings);
     setTestDateSettings(saved);
-    const result = applyAndPersistDayRollover(
-      medicinesRef.current,
-      getCurrentDate(),
-    );
+    const result = runDayBoundarySync({
+      now: getCurrentDate(),
+      source: "test-date",
+      reactMedicines: medicinesRef.current,
+    });
+    suppressMedicinesPersistRef.current = true;
     medicinesRef.current = result.medicines;
     setMedicines(result.medicines);
     setHistory(result.history);
     setNow(getCurrentDate());
+    setDayDebugTick((value) => value + 1);
     if (result.didRollover || result.didMigrate) {
       voiceReminderService.resetAll();
     }
@@ -255,17 +292,7 @@ export default function App() {
     if (!enabled) {
       clearTestDateSettings();
       setTestDateSettings(loadTestDateSettings());
-      const result = applyAndPersistDayRollover(
-        medicinesRef.current,
-        getCurrentDate(),
-      );
-      medicinesRef.current = result.medicines;
-      setMedicines(result.medicines);
-      setHistory(result.history);
-      setNow(getCurrentDate());
-      if (result.didRollover || result.didMigrate) {
-        voiceReminderService.resetAll();
-      }
+      syncDayBoundary("test-date-off");
       showToast("端末の日付に戻しました");
       return;
     }
@@ -945,6 +972,77 @@ export default function App() {
                 >
                   端末の日付に戻す
                 </button>
+                <button
+                  type="button"
+                  className="secondary-action"
+                  onClick={() => syncDayBoundary("debug-manual")}
+                >
+                  日次チェックを今すぐ実行
+                </button>
+              </div>
+
+              <div className="day-debug-panel">
+                <h3>日次デバッグ</h3>
+                <p className="settings-help">
+                  実機の日跨ぎ調査用です。テスト日付OFF時も raw 値を確認できます。
+                </p>
+                <dl className="day-debug-list">
+                  <div>
+                    <dt>getDeviceDate()</dt>
+                    <dd>{dayDebug.deviceDateKey}</dd>
+                  </div>
+                  <div>
+                    <dt>getCurrentDateKey()</dt>
+                    <dd>{dayDebug.currentDateKey}</dd>
+                  </div>
+                  <div>
+                    <dt>megusuri-last-active-date</dt>
+                    <dd>{dayDebug.lastActiveDate ?? "(null)"}</dd>
+                  </div>
+                  <div>
+                    <dt>megusuri-test-date-v1</dt>
+                    <dd>
+                      enabled={String(dayDebug.testDateSettings.enabled)} /{" "}
+                      dateKey={dayDebug.testDateSettings.dateKey ?? "(null)"}
+                      <br />
+                      raw={dayDebug.testDateRaw ?? "(null)"}
+                      <br />
+                      日付判定へ影響=
+                      {dayDebug.testDateAffectsClock ? "YES" : "NO"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>megusuri-daily-reset-migrated-v1</dt>
+                    <dd>
+                      {dayDebug.dailyResetMigrated ? "1" : "0"} (raw=
+                      {dayDebug.dailyResetMigratedRaw ?? "(null)"})
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>日次チェック最終実行</dt>
+                    <dd>
+                      {dayDebug.lastCheckAt ?? "(未実行)"}
+                      <br />
+                      source={dayDebug.lastCheckSource ?? "-"} / didRollover=
+                      {String(dayDebug.lastCheckDidRollover)} / didMigrate=
+                      {String(dayDebug.lastCheckDidMigrate)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>最後に日次リセットした日付</dt>
+                    <dd>{dayDebug.lastRolloverDateKey ?? "(なし)"}</dd>
+                  </div>
+                </dl>
+                <p className="day-debug-doses-title">各dose status</p>
+                <ul className="day-debug-doses">
+                  {dayDebug.doses.map((dose) => (
+                    <li key={`${dose.medicineId}-${dose.doseId}`}>
+                      {dose.medicineName} {dose.label} {dose.time}:{" "}
+                      <strong>{dose.status}</strong>
+                      {dose.completedAt ? ` (${dose.completedAt})` : ""}
+                    </li>
+                  ))}
+                </ul>
               </div>
             </section>
           </div>

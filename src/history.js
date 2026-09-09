@@ -181,6 +181,8 @@ export function applyAndPersistDayRollover(medicines, now = getCurrentDate()) {
   });
 
   if (result.didRollover) {
+    // 順序固定: 履歴 → medicines リセット保存 → その後 last-active-date
+    // last-active を先に今日へすると、以降のチェックが同日扱いになりリセット不能になる
     saveHistory(result.history);
     saveMedicines(result.medicines);
   }
